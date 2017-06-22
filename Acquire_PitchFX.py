@@ -26,6 +26,7 @@ os.chdir('C:/Ryan/Baseball_data/Databases')
 
 conn = sqlite3.connect('MLB_Data.sqlite')
 cur = conn.cursor()
+# Eventually we won't want to drop the table if it exists,but I've got that in there to keep it small for testing
 cur.execute('''Drop Table if exists Games''')
 # Need to store datetimes as "YYYY-MM-DD HH:MM:SS.SSS"
 cur.execute('''CREATE TABLE IF NOT EXISTS Games
@@ -45,7 +46,7 @@ enddate = datetime.strptime(end, '%Y-%m-%d')
 # This is the base url for the mlb game data website
 base_url = "http://gd2.mlb.com/components/game/mlb/"
 
-# Now we'll loop throgh the dates from one to the chnage plus one
+# Now we'll loop through the dates from one to the chnage plus one
 delta = enddate - startdate
 for i in range(delta.days+1):
     active_date = (startdate+timedelta(days=i))
@@ -54,6 +55,7 @@ for i in range(delta.days+1):
     url_d = "/day_"+active_date.strftime('%d')+"/"
     day_url = base_url+url_yr+url_mt+url_d
     print(day_url)
+    # We open the url if possible or print an description of the error
     try:
         mlb_site = urlopen(day_url)
     except:
@@ -62,19 +64,19 @@ for i in range(delta.days+1):
 
 #   print(mlb_soup)
 # for each date we want to find the games that were played
-# game ids always start with gid_
+# game ids always start with gid_ and we use regular expression search to find these types of anchors
     games = mlb_soup.find_all("a", href=re.compile("gid_.*"))
     for game in games:
         g = game.get_text().strip()
         try:
         # We scrape the game number from as the last digit in the game id
             game_number = int(g[len(g)-2:len(g)-1])
-
         except:
         # If we encounter a problem we assume there was just 1 game (no double-header)
             game_number = 1
-        # Nowe augment the url to include the game id
+        # Now we augment the url to include the game id
         game_url = day_url+g
+        # We should probably try/except the opening of the game url to track errors
         if BeautifulSoup(urlopen(game_url), "lxml").find("a", href="game.xml"):
             game_xml = urlopen(game_url+"game.xml")
             game_xml_tree = ET.parse(game_xml)
@@ -84,7 +86,6 @@ for i in range(delta.days+1):
             # We use g[:-3] to remove the '/' at the end of the game id (g variable)
             game_data['game_id'] = g[:-1]
             game_data['game_number'] = g[-2:-1]
-#            game_data['active_date']=str(active_date.date())
             # We insert a datetime version of the game date and start time
             local_datetime = str(active_date.date())+' '+game_data['local_game_time']+':00'
             game_data['local_game_datetime'] = datetime.strptime(local_datetime, '%Y-%m-%d %H:%M:%S')
@@ -96,19 +97,24 @@ for i in range(delta.days+1):
             if AM_or_PM.strip() == 'PM':
                 game_datetime_et = game_datetime_et+timedelta(hours=12)
             game_data['game_datetime_et'] = game_datetime_et
+            # We now want to load the game specific data to the Games SQL db
             cur.execute('''INSERT OR IGNORE INTO Games
                         (game_id, game_type, game_number, local_game_datetime,
                          game_time_et, game_pk, gameday_sw)
                         Values(:game_id,:type,:game_number,
                         :local_game_datetime,:game_datetime_et,:game_pk,
                         :gameday_sw)''', game_data)
+            # We now want to load the stadium description data into the stadiums SQL db
+            # This part obviously needs to be finished
             cur.execute('''INSERT OR IGNORE INTO Stadiums
                         ()
                         Values()''', )
             conn.commit()
             # Now we look at getting data on teams in the games
+            # Have to finish parsing this out, but we'll parse out team info and load it to a teams SQL db
             team_data = game.findall('team')
 #            for team in team_data:
 #                print(team.attrib)
+# Next step after finishing these will be to go inning by inning and get the data on what occurred for each pitch
     print('All done')
 conn.close()
